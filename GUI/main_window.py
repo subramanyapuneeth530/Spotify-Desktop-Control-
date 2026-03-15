@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from typing import Optional
 
-from PySide6.QtCore    import Qt, QTimer, QUrl
+from PySide6.QtCore    import Qt, QTimer, QUrl, QSize, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui     import QColor, QFont, QPixmap
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from PySide6.QtWidgets import (
@@ -65,9 +65,14 @@ class SpotifyPlayerWindow(QMainWindow):
 
     # ─────────────────────────────── UI BUILD ───────────────────────────────
 
+    # ── maximised / minimised sizes ────────────────────────────────────────
+    _MAXI_SIZE = QSize(1100, 760)
+    _MINI_SIZE = QSize(400,  380)   # just cassette + EQ + progress
+
     def _build_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
+        self._is_mini = False        # track current mode
 
         # ── cassette (now-playing) widget ────────────────────────────────
         self.cassette = CassetteWidget()
@@ -77,11 +82,14 @@ class SpotifyPlayerWindow(QMainWindow):
         # ── transport controls ───────────────────────────────────────────
         controls = self._build_controls()
 
+        self._controls_widget = QWidget()
+        self._controls_widget.setLayout(controls)
+
         left_col = QVBoxLayout()
         left_col.setContentsMargins(0, 0, 0, 0)
         left_col.setSpacing(12)
         left_col.addWidget(self.cassette, stretch=1)
-        left_col.addLayout(controls)
+        left_col.addWidget(self._controls_widget)
 
         left_widget = QWidget()
         left_widget.setLayout(left_col)
@@ -89,26 +97,105 @@ class SpotifyPlayerWindow(QMainWindow):
         # ── right panel: tabs ────────────────────────────────────────────
         self._build_tabs()
 
-        splitter = QSplitter(Qt.Horizontal)
-        splitter.addWidget(left_widget)
-        splitter.addWidget(self.tab_widget)
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
-        splitter.setSizes([360, 700])
-        splitter.setHandleWidth(1)
-        splitter.setStyleSheet(
+        self._splitter = QSplitter(Qt.Horizontal)
+        self._splitter.addWidget(left_widget)
+        self._splitter.addWidget(self.tab_widget)
+        self._splitter.setStretchFactor(0, 0)
+        self._splitter.setStretchFactor(1, 1)
+        self._splitter.setSizes([360, 700])
+        self._splitter.setHandleWidth(1)
+        self._splitter.setStyleSheet(
             f"QSplitter::handle {{ background: {PALETTE['border']}; }}"
         )
 
+        # ── mini-mode toggle button (top-right corner) ───────────────────
+        self._mini_btn = QPushButton("Compact")
+        self._mini_btn.setObjectName("miniBtn")
+        self._mini_btn.setFixedSize(70, 26)
+        self._mini_btn.setToolTip("Compact view — hide tabs")
+        self._mini_btn.setStyleSheet(f"""
+            QPushButton#miniBtn {{
+                background: {PALETTE['surface2']};
+                color: {PALETTE['text']};
+                border: 1px solid {PALETTE['accent']};
+                border-radius: 5px;
+                font-size: 11px;
+                font-weight: 600;
+                padding: 2px 6px;
+            }}
+            QPushButton#miniBtn:hover {{
+                background: {PALETTE['accent']};
+                color: #000000;
+            }}
+        """)
+        self._mini_btn.clicked.connect(self.toggle_mini)
+
+        # header row: button sits right-aligned above the splitter
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 4)
+        header.addStretch()
+        header.addWidget(self._mini_btn)
+
         main_layout = QVBoxLayout(central)
-        main_layout.setContentsMargins(12, 12, 12, 4)
+        main_layout.setContentsMargins(12, 8, 12, 4)
         main_layout.setSpacing(0)
-        main_layout.addWidget(splitter)
+        main_layout.addLayout(header)
+        main_layout.addWidget(self._splitter)
 
         # ── status bar ───────────────────────────────────────────────────
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         self.status_bar.showMessage("Ready")
+
+    # ── mini / maxi toggle ───────────────────────────────────────────────────
+
+    def toggle_mini(self):
+        if self._is_mini:
+            self._go_maxi()
+        else:
+            self._go_mini()
+
+    def _go_mini(self):
+        """Hide everything except the cassette widget, shrink window."""
+        self._is_mini = True
+        self._mini_btn.setText("Full")
+        self._mini_btn.setToolTip("Full view  (show tabs)")
+
+        # hide the right panel and the controls below the cassette
+        self.tab_widget.hide()
+        self._controls_widget.hide()
+        self.status_bar.hide()
+
+        # fix cassette size so it fills the mini window
+        self.cassette.setMinimumSize(370, 320)
+        self.cassette.setMaximumSize(16777215, 16777215)
+
+        # shrink window — no animation needed, instant feels snappy
+        self.setMinimumSize(380, 340)
+        self.resize(self._MINI_SIZE)
+        self.setMaximumSize(600, 520)   # let user resize a bit but not huge
+
+    def _go_maxi(self):
+        """Restore full layout."""
+        self._is_mini = False
+        self._mini_btn.setText("Compact")
+        self._mini_btn.setToolTip("Compact view  (hide tabs)")
+
+        # restore cassette constraints
+        self.cassette.setMinimumWidth(280)
+        self.cassette.setMaximumWidth(420)
+        self.cassette.setMinimumHeight(0)
+        self.cassette.setMaximumSize(420, 16777215)
+
+        # show everything back
+        self.tab_widget.show()
+        self._controls_widget.show()
+        self.status_bar.show()
+
+        # restore window
+        self.setMaximumSize(16777215, 16777215)
+        self.setMinimumSize(920, 700)
+        self.resize(self._MAXI_SIZE)
 
     def _build_controls(self) -> QVBoxLayout:
         layout = QVBoxLayout()
@@ -188,8 +275,8 @@ class SpotifyPlayerWindow(QMainWindow):
         dev_row = QHBoxLayout()
         dev_lbl = QLabel("Device"); dev_lbl.setObjectName("sub")
         self.device_combo = QComboBox()
-        self.refresh_dev_btn = QPushButton("↻")
-        self.refresh_dev_btn.setFixedSize(32, 32)
+        self.refresh_dev_btn = QPushButton("Refresh")
+        self.refresh_dev_btn.setFixedSize(60, 32)
         self.refresh_dev_btn.setToolTip("Refresh devices")
         self.refresh_dev_btn.clicked.connect(self.load_devices)
         self.device_combo.currentIndexChanged.connect(self._on_device_changed)

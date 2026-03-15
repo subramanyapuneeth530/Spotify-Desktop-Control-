@@ -100,7 +100,7 @@ QComboBox {{
     border-radius: 8px; padding: 6px 12px;
     color: {PALETTE['text']}; min-width: 130px;
 }}
-QComboBox::drop-down {{ border: none; width: 24px; }}
+
 QComboBox QAbstractItemView {{
     background: {PALETTE['surface2']}; border: 1px solid {PALETTE['border']};
     color: {PALETTE['text']}; selection-background-color: rgba(29,185,84,0.2);
