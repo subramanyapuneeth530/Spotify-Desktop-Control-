@@ -53,6 +53,10 @@ Spotify-Desktop-Control/
 
 ---
 
+## Preview
+
+
+
 ## Setup
 
 ### Prerequisites
@@ -151,3 +155,4 @@ git push origin main
 ## License
 
 MIT
+
