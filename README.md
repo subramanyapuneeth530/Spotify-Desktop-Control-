@@ -53,10 +53,6 @@ Spotify-Desktop-Control/
 
 ---
 
-## Preview
-
-
-
 ## Setup
 
 ### Prerequisites
